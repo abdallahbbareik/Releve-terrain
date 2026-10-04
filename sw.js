@@ -1,4 +1,4 @@
-const V = 'releve-v17';
+const V = 'releve-v21';
 const SHELL = ['./', './index.html', './manifest.json', './icon.svg',
   'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css',
   'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js',

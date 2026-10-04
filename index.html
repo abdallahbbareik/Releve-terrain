@@ -43,6 +43,15 @@ h3{margin:20px 0 0;font-size:15px;color:var(--acc)}
 .bar2 span{flex:1;font-size:14px}
 .bar2 .btn{flex:none;padding:8px 12px}
 .leaflet-popup-content a{display:inline-block;padding:10px 6px;font-size:16px}
+.bar2{flex-wrap:wrap}
+#gMsg{flex:1 1 60%}
+.tools{flex:1 1 100%;display:flex;gap:6px}
+.tools .btn{flex:1;padding:8px 6px}
+.tools select{width:auto;padding:8px 6px;flex:0 0 auto}
+.adr{display:flex;gap:8px}
+.adr .btn{flex:none;width:52px}
+#toast{position:fixed;left:12px;right:12px;bottom:90px;z-index:3000;background:var(--ink);color:#fff;padding:10px 14px;border-radius:8px;text-align:center}
+.vtx.sel{background:#e4572e}
 .vtx{background:#4fc3f7;border:3px solid #062a3d;border-radius:50%}
 #trkBar .btn{background:var(--bg);border-color:var(--acc)}
 #thumbs .th{position:relative}
@@ -58,9 +67,13 @@ h3{margin:20px 0 0;font-size:15px;color:var(--acc)}
 <div id="status"><span id="gps">GPS : recherche…</span><span id="rec" hidden></span></div>
 <button id="bNorth" aria-label="Nord"><svg id="nSvg" viewBox="0 0 40 40" width="38" height="38"><polygon points="20,3 28,22 12,22" fill="#e4572e"/><polygon points="20,37 28,22 12,22" fill="#f4f7f2"/><circle cx="20" cy="22" r="2.2" fill="#062a3d"/></svg></button>
 <button id="bGps">📡 Activer le GPS</button>
+<div id="toast" hidden></div>
 <div id="stack">
   <div class="bar2" id="ptBar" hidden><span id="ptMsg"></span><button class="btn" id="ptGps">📍 Ma position</button><button class="btn" id="ptOff">✕</button></div>
-  <div class="bar2" id="geoBar" hidden><span>Glisse un sommet · touche-le pour le supprimer · touche la carte pour prolonger</span><button class="btn p" id="gOk">✔</button><button class="btn" id="gNo">✕</button></div>
+  <div class="bar2" id="geoBar" hidden>
+    <span id="gMsg"></span><button class="btn p" id="gOk">✔</button><button class="btn" id="gNo">✕</button>
+    <div class="tools"><select id="gTol" aria-label="Tolérance"><option value="5">5 m</option><option value="10" selected>10 m</option><option value="15">15 m</option><option value="20">20 m</option><option value="30">30 m</option></select><button class="btn" id="gSimp">✂ Simplifier</button><button class="btn" id="gStr">📏 Redresser</button><button class="btn" id="gUndo">↶</button></div>
+  </div>
   <div class="bar2" id="mvBar" hidden><span>Glisse le point à sa nouvelle position</span><button class="btn p" id="mOk">✔</button><button class="btn" id="mNo">✕</button></div>
   <div id="trkBar" hidden>
     <button class="btn" id="tPhoto">📷 Photo</button>
@@ -81,7 +94,7 @@ h3{margin:20px 0 0;font-size:15px;color:var(--acc)}
   <label for="pName">Nom du point (nom du dossier photos)</label>
   <input type="text" id="pName" autocomplete="off" placeholder="ex. POT-001">
   <div id="custom"></div>
-  <label for="pNote">Remarque</label>
+  <label for="pNote">Commentaire</label>
   <textarea id="pNote" rows="3"></textarea>
   <div class="row">
     <button class="btn pic" id="bCam">📷 Prendre une photo</button>
@@ -92,7 +105,8 @@ h3{margin:20px 0 0;font-size:15px;color:var(--acc)}
   <div id="thumbs"></div>
   <div class="vide" id="pPos"></div>
   <div class="row" id="pLoc" hidden><button class="btn" id="pMap">🗺 Déplacer sur la carte (glisser)</button></div>
-  <div class="row" id="pTrk" hidden><button class="btn" id="pShape">✏️ Modifier le tracé sur la carte</button></div>
+  <div class="row" id="pTrk" hidden><button class="btn" id="pShape">✏️ Modifier / simplifier le tracé</button></div>
+  <div class="row" id="pRawRow" hidden><button class="btn" id="pRaw">↩ Rétablir le tracé d'origine</button></div>
   <div class="row">
     <button class="btn" id="pCancel">Annuler</button>
     <button class="btn p" id="pSave">Enregistrer le point</button>
@@ -120,6 +134,9 @@ h3{margin:20px 0 0;font-size:15px;color:var(--acc)}
   <div class="vide" id="savInfo"></div>
   <h3>Points</h3><div id="lPts"></div>
   <h3>Trajets</h3><div id="lTrk"></div>
+  <div class="row"><button class="btn" id="lImport">📂 Importer une sauvegarde (ZIP ou fichiers)</button></div>
+  <div class="vide">Après une réinstallation : choisis le ZIP dans Documents/Releve-Terrain/Exports.</div>
+  <input type="file" id="iImp" multiple hidden>
   <div class="row"><button class="btn p" id="lClose">Fermer</button></div>
 </section>
 
@@ -129,14 +146,61 @@ h3{margin:20px 0 0;font-size:15px;color:var(--acc)}
 <script>
 const $ = s => document.querySelector(s);
 
-/* ---------- Champs personnalisés : à modifier ici ----------
-   Liste déroulante : {id, label, options:[...]}   Texte libre : {id, label} */
-const FIELDS = [
-  {id: 'type', label: 'Type', options: ['Appui', 'Chambre', 'Boites', 'SRO', 'Immeuble', 'Villa']}
+/* ---------- Champs par type de point : à modifier ici ----------
+   Liste : {id, label, options:[...], def}   Nombre : {id, label, num:true}   Texte : {id, label} */
+const TYPES = ['Poteau', 'Chambre', 'Boîtier', 'SRO', 'Immeuble', 'Villa'];
+const OLD_TYPES = {Appui: 'Poteau', Boites: 'Boîtier'};  // anciens noms -> nouveaux
+const YN = ['Non', 'Oui'];
+const COMMON = [  // communs à tous les types
+  {id: 'statut', label: 'Statut', options: ['Existant', 'À poser', 'À remplacer', 'À déposer']},
+  {id: 'etat', label: 'État', options: ['Conforme', 'Non conforme']},
+  {id: 'adresse', label: 'Adresse'},  // remplie automatiquement (internet), modifiable
+  {id: 'boitier', label: 'Boîtier FTTH', options: YN, def: 'Non', not: ['Boîtier']},  // Oui = crée un point Boîtier
 ];
-$('#custom').innerHTML = FIELDS.map(f => `<label for="f_${f.id}">${f.label}</label>` + (f.options
-  ? `<select id="f_${f.id}"><option value="">Choisir…</option>${f.options.map(o => `<option>${o}</option>`).join('')}</select>`
-  : `<input type="text" id="f_${f.id}" autocomplete="off">`)).join('');
+const BY_TYPE = {
+  'Poteau': [{id: 'nature', label: 'Nature', options: ['Bois', 'Métal', 'Béton', 'Façade']}, {id: 'hauteur', label: 'Hauteur (m)', num: true, def: '8'}],
+  'Chambre': [{id: 'sous_type', label: 'Type de chambre', options: ['L0T', 'L1T', 'L2T', 'L3T', 'L4T', 'Autre']}],
+  'Boîtier': [{id: 'sous_type', label: 'Type de boîtier', options: ['BPE', 'PBO', 'PB', 'Autre']}, {id: 'sature', label: 'Saturé', options: YN, def: 'Non'}, {id: 'support', label: 'Support', options: ['Poteau', 'Chambre', 'Façade', 'Sous-sol']}],
+  'SRO': [{id: 'sous_type', label: 'Type de SRO', options: ['Armoire de rue', 'Shelter', 'Local', 'Autre']}, {id: 'capacite', label: 'Capacité', num: true}, {id: 'emplac', label: 'Emplacement', options: ['Domaine public', 'Domaine privé']}],
+  'Immeuble': [{id: 'etages', label: "Nombre d'étages", num: true}, {id: 'logements', label: 'Nombre de logements', num: true}, {id: 'loc_tech', label: 'Local technique', options: YN}, {id: 'gaine', label: 'Gaine montante', options: YN}, {id: 'autor_syn', label: 'Autorisation syndic', options: ['Obtenue', 'En cours', 'Refusée']}, {id: 'contact', label: 'Contact syndic (facultatif)'}, {id: 'raccord', label: 'Mode de raccordement', options: ['Façade', 'Souterrain', 'Aérien']}],
+  'Villa': [{id: 'raccord', label: 'Raccordement', options: ['Aérien', 'Souterrain', 'Façade']}],
+};
+const FIELDS = [{id: 'type'}, ...COMMON, ...new Map(Object.values(BY_TYPE).flat().map(f => [f.id, f])).values()];  // toutes les colonnes (exports)
+const fieldsFor = t => [...COMMON.filter(f => !(f.not || []).includes(t)), ...(BY_TYPE[t] || [])];
+const attr = v => String(v ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+function ctl(f, v) {
+  const id = 'f_' + f.id, val = v || f.def || '';
+  if (f.options) return `<select id="${id}">${f.def ? '' : '<option value="">Choisir…</option>'}${f.options.map(o => `<option${o === val ? ' selected' : ''}>${o}</option>`).join('')}</select>`;
+  return `<input type="text" id="${id}" autocomplete="off"${f.num ? ' inputmode="decimal"' : ''} value="${attr(val)}">`;
+}
+let addrEdited = false, addrTok = 0;
+function renderFields(type, vals) {  // affiche Type + champs communs + champs du type choisi
+  vals = vals || {};
+  let h = `<label for="f_type">Type</label><select id="f_type"><option value="">Choisir…</option>${TYPES.map(t => `<option${t === type ? ' selected' : ''}>${t}</option>`).join('')}</select>`;
+  fieldsFor(type).forEach(f => {
+    h += `<label for="f_${f.id}">${f.label}</label>` + (f.id === 'adresse' ? `<div class="adr">${ctl(f, vals[f.id])}<button class="btn" id="bAdr" type="button">↻</button></div>` : ctl(f, vals[f.id]));
+  });
+  $('#custom').innerHTML = h;
+  $('#f_type').onchange = () => renderFields($('#f_type').value, readFields());
+  $('#f_adresse').oninput = () => { addrEdited = true; };
+  $('#bAdr').onclick = () => autoAddr(true);
+}
+function readFields() { const o = {}; document.querySelectorAll('#custom [id^="f_"]').forEach(el => o[el.id.slice(2)] = el.value.trim()); return o; }
+async function autoAddr(force) {  // adresse depuis OpenStreetMap (internet) ; sinon à saisir
+  const el = $('#f_adresse'); if (!el || !target) return;
+  if (!force && (el.value || addrEdited)) return;
+  const tok = ++addrTok; el.placeholder = "Recherche de l'adresse…";
+  try {
+    const ac = new AbortController(), tm = setTimeout(() => ac.abort(), 8000);
+    const r = await fetch('https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=18&addressdetails=1&accept-language=fr&lat=' + target.lat + '&lon=' + target.lng, {signal: ac.signal});
+    clearTimeout(tm);
+    const j = await r.json(), a = j.address || {}, rue = [a.house_number, a.road || a.pedestrian || a.footway || a.path].filter(Boolean).join(' ');
+    const txt = [rue, a.suburb || a.neighbourhood || a.city_district, a.city || a.town || a.village || a.municipality].filter(Boolean).join(', ') || (j.display_name || '').split(',').slice(0, 3).join(',').trim();
+    const e2 = $('#f_adresse');
+    if (tok === addrTok && e2) { if (txt) { e2.value = txt; addrEdited = false; } else e2.placeholder = 'Adresse introuvable : à saisir'; }
+  } catch (e) { const e2 = $('#f_adresse'); if (tok === addrTok && e2) e2.placeholder = 'Adresse (hors ligne) : à saisir'; }
+}
+const toast = m => { const t = $('#toast'); t.textContent = m; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => t.hidden = true, 4000); };
 
 /* ---------- Stockage local (IndexedDB) ---------- */
 const DB = (() => {
@@ -246,10 +310,11 @@ const showPos = () => {
 function openForm(o) {
   jobs = [];
   $('#pTitle').textContent = o.title; $('#pName').value = o.name || ''; $('#pNote').value = o.note || '';
-  FIELDS.forEach(f => $('#f_' + f.id).value = (o.f || {})[f.id] || '');
-  $('#custom').hidden = !!o.track; $('#pLoc').hidden = !o.gps; $('#pTrk').hidden = !o.track; showPos();
+  if (!o.track) { addrEdited = false; renderFields((o.f || {}).type || '', o.f); }
+  $('#custom').hidden = !!o.track; $('#pLoc').hidden = !o.gps; $('#pTrk').hidden = !o.track; $('#pRawRow').hidden = !(o.track && editing.rec.raw); showPos();
   $('#pSave').textContent = editing ? 'Enregistrer les modifications' : 'Enregistrer le point';
   thumbs(); $('#fPoint').classList.add('on');
+  if (!o.track) autoAddr();
 }
 function newPoint(pos) {
   if (!pos) return alert('Position GPS non disponible. Touchez la carte pour placer le point à la main.');
@@ -278,7 +343,7 @@ $('#ptOff').onclick = () => setMode(null);
 map.on('click', e => {
   const ll = e.latlng;
   if (mv) return;
-  if (geo) { geo.pts.push([ll.lng, ll.lat, Date.now()]); return drawGeo(); }
+  if (geo) { if (geo.tool) return; snap(); geo.pts.push([ll.lng, ll.lat, Date.now()]); return drawGeo(); }
   if (mapMode === 'point') {  // confirmation de la position avant l'ajout
     pend = ll;
     return L.popup({closeButton: false}).setLatLng(ll)
@@ -301,23 +366,64 @@ $('#mOk').onclick = () => { const l = mv.m.getLatLng(); target = {lat: l.lat, ln
 $('#mNo').onclick = endMv;
 
 /* Modification du tracé : sommets déplaçables, suppression, prolongement */
+const GEO_HINT = 'Glisse un sommet · touche-le pour le supprimer · touche la carte pour prolonger';
+const geoMsg = t => { $('#gMsg').textContent = t || GEO_HINT; };
+const snap = () => { geo.hist.push(geo.pts.map(q => q.slice())); if (geo.hist.length > 20) geo.hist.shift(); };  // pour ↶
 function drawGeo() {
   geo.line.setLatLngs(geo.pts.map(q => [q[1], q[0]])); geo.marks.clearLayers();
   geo.pts.forEach((q, i) => {
-    const m = L.marker([q[1], q[0]], {draggable: true, icon: L.divIcon({className: 'vtx', iconSize: [22, 22]})}).addTo(geo.marks);
+    const m = L.marker([q[1], q[0]], {draggable: true, icon: L.divIcon({className: 'vtx' + (geo.a === i ? ' sel' : ''), iconSize: [22, 22]})}).addTo(geo.marks);
+    m.on('dragstart', snap);
     m.on('drag', () => { const l = m.getLatLng(); q[0] = l.lng; q[1] = l.lat; geo.line.setLatLngs(geo.pts.map(r => [r[1], r[0]])); });
-    m.on('click', () => { if (geo.pts.length > 2 && confirm('Supprimer ce sommet ?')) { geo.pts.splice(i, 1); drawGeo(); } });
+    m.on('click', () => {
+      if (geo.tool === 'straight') {  // Redresser : sommet de départ puis sommet d'arrivée
+        if (geo.a == null) { geo.a = i; geoMsg("Redresser : touche maintenant le sommet d'arrivée"); return drawGeo(); }
+        const a = Math.min(geo.a, i), b = Math.max(geo.a, i);
+        geo.tool = null; geo.a = null; $('#gStr').classList.remove('p');
+        if (b - a < 2) { geoMsg('Rien à redresser entre ces deux sommets.'); return drawGeo(); }
+        snap(); geo.pts.splice(a + 1, b - a - 1); geoMsg('Redressé : ' + (b - a - 1) + ' sommets supprimés.'); return drawGeo();
+      }
+      if (geo.pts.length > 2 && confirm('Supprimer ce sommet ?')) { snap(); geo.pts.splice(i, 1); drawGeo(); }
+    });
   });
 }
-function endGeo() { map.removeLayer(geo.line); map.removeLayer(geo.marks); geo = null; $('#geoBar').hidden = true; layerTrk.addTo(map); $('#fPoint').classList.add('on'); }
+function simplifyPts(pts, tol) {  // Douglas-Peucker, tolérance en mètres
+  if (pts.length < 3) return pts.slice();
+  const kx = 111320 * Math.cos(pts[0][1] * Math.PI / 180), ky = 110540, X = pts.map(q => [q[0] * kx, q[1] * ky]);
+  const keep = new Uint8Array(pts.length); keep[0] = keep[pts.length - 1] = 1;
+  const st = [[0, pts.length - 1]];
+  while (st.length) {
+    const [a, b] = st.pop(), [x1, y1] = X[a], dx = X[b][0] - x1, dy = X[b][1] - y1, L2 = dx * dx + dy * dy;
+    let dm = 0, im = -1;
+    for (let i = a + 1; i < b; i++) {
+      const t = L2 ? Math.max(0, Math.min(1, ((X[i][0] - x1) * dx + (X[i][1] - y1) * dy) / L2)) : 0;
+      const d = Math.hypot(X[i][0] - (x1 + t * dx), X[i][1] - (y1 + t * dy));
+      if (d > dm) { dm = d; im = i; }
+    }
+    if (dm > tol && im > 0) { keep[im] = 1; st.push([a, im], [im, b]); }
+  }
+  return pts.filter((_, i) => keep[i]);
+}
+$('#gSimp').onclick = () => {
+  const tol = +$('#gTol').value, n0 = geo.pts.length; snap();
+  geo.pts = simplifyPts(geo.pts, tol); drawGeo();
+  geoMsg('Simplifié : ' + n0 + ' → ' + geo.pts.length + ' sommets (tolérance ' + tol + ' m). ↶ pour annuler.');
+};
+$('#gStr').onclick = () => {
+  geo.tool = geo.tool ? null : 'straight'; geo.a = null; $('#gStr').classList.toggle('p', !!geo.tool);
+  geoMsg(geo.tool ? 'Redresser : touche le sommet de départ' : ''); drawGeo();
+};
+$('#gUndo').onclick = () => { if (geo.hist.length) { geo.pts = geo.hist.pop(); geo.tool = null; geo.a = null; $('#gStr').classList.remove('p'); drawGeo(); geoMsg(); } };
+function endGeo() { map.removeLayer(geo.line); map.removeLayer(geo.marks); geo = null; $('#geoBar').hidden = true; $('#gStr').classList.remove('p'); layerTrk.addTo(map); $('#fPoint').classList.add('on'); }
 $('#pShape').onclick = () => {
   const pts = (editing.pts || editing.rec.pts).map(q => q.slice());
   $('#fPoint').classList.remove('on'); map.removeLayer(layerTrk);
-  geo = {pts, line: L.polyline([], {color: '#4fc3f7', weight: 5, interactive: false}).addTo(map), marks: L.layerGroup().addTo(map)};
-  drawGeo(); map.fitBounds(pts.map(q => [q[1], q[0]]), {padding: [40, 40]}); $('#geoBar').hidden = false;
+  geo = {pts, hist: [], tool: null, a: null, line: L.polyline([], {color: '#4fc3f7', weight: 5, interactive: false}).addTo(map), marks: L.layerGroup().addTo(map)};
+  drawGeo(); geoMsg(); map.fitBounds(pts.map(q => [q[1], q[0]]), {padding: [40, 40]}); $('#geoBar').hidden = false;
 };
 $('#gOk').onclick = () => { editing.pts = geo.pts; endGeo(); showPos(); };
 $('#gNo').onclick = endGeo;
+$('#pRaw').onclick = () => { editing.pts = editing.rec.raw.map(q => q.slice()); showPos(); alert("Tracé d'origine rétabli : enregistre les modifications pour le conserver."); };
 $('#pCancel').onclick = () => { $('#fPoint').classList.remove('on'); editing = null; };
 $('#pSave').onclick = async () => {
   const name = $('#pName').value.trim();
@@ -328,22 +434,40 @@ $('#pSave').onclick = async () => {
     const l = ed.pts[ed.pts.length - 1], old = safe(ed.name);
     const pos = me ? {lat: me.lat, lng: me.lng} : l ? {lat: l[1], lng: l[0]} : map.getCenter();  // position des nouvelles photos
     ed.name = name; ed.note = note; ed.maj = now;
-    if (editing.pts) ed.pts = editing.pts;
+    if (editing.pts) { if (!ed.raw) ed.raw = ed.pts; ed.pts = editing.pts; }  // l'original reste récupérable
     ed.photos = items.map(x => x.h ? {...x.h, blob: x.b} : {blob: x.b, lat: pos.lat, lng: pos.lng, t: now});
     await DB.put('tracks', ed);
     rmDir('Trajets/' + old).then(() => saveTrackFiles(ed));
   } else {
-    const fv = {};
-    for (const f of FIELDS) { fv[f.id] = $('#f_' + f.id).value.trim(); if (f.options && !fv[f.id]) return alert('Choisissez : ' + f.label + '.'); }
+    const fv = readFields();
+    if (!fv.type) return alert('Choisissez le type.');
+    if ((!ed || (ed.f && ed.f.statut)) && !fv.statut) return alert('Choisissez le statut.');
     if ((!ed || name !== ed.name) && (await DB.all('points')).some(p => p.name === name)) return alert('Ce nom existe déjà. Choisissez un autre nom.');
     await Promise.all(jobs);
     const pt = {name, f: fv, note, lat: target.lat, lng: target.lng, acc: target.acc, alt: target.alt ?? null, t: ed ? ed.t : now, photos: items.map(x => x.b)};
-    if (ed) { pt.maj = now; await DB.del('points', ed.name); }
+    if (ed) {
+      pt.maj = now; if (ed.lien) pt.lien = ed.lien; await DB.del('points', ed.name);
+      if (name !== ed.name) for (const b of (await DB.all('points')).filter(x => x.lien === ed.name)) { b.lien = name; await DB.put('points', b); }
+    }
     await DB.put('points', pt);
+    if (fv.boitier === 'Oui' && fv.type !== 'Boîtier') await autoBoitier(pt);
     if (ed) rmDir('Points/' + safe(ed.name)).then(() => savePointFiles(pt)); else savePointFiles(pt);
   }
   $('#fPoint').classList.remove('on'); editing = null; draw();
 };
+
+const SUPPORT = {'Poteau': 'Poteau', 'Chambre': 'Chambre'};
+async function autoBoitier(par) {  // « Boîtier FTTH = Oui » : crée un point Boîtier à la même position
+  const all = await DB.all('points');
+  if (all.some(x => x.lien === par.name)) return;
+  let nm = par.name + '-B', k = 2; while (all.some(x => x.name === nm)) nm = par.name + '-B' + k++;
+  const f = par.f || {}, b = {name: nm, lien: par.name, f: {type: 'Boîtier', statut: f.statut || '', etat: f.etat || '', adresse: f.adresse || '', sature: 'Non', support: SUPPORT[f.type] || ''},
+    note: '', lat: par.lat, lng: par.lng, acc: par.acc, alt: par.alt, t: new Date().toISOString(), photos: []};
+  await DB.put('points', b); savePointFiles(b); toast('Point boîtier « ' + nm + ' » créé automatiquement : à compléter.');
+}
+async function migrate() {
+  for (const p of await DB.all('points')) if (p.f && OLD_TYPES[p.f.type]) { p.f.type = OLD_TYPES[p.f.type]; await DB.put('points', p); }
+}
 
 /* ---------- Trajets : automatique (GPS) ou manuel (carte), photos en option ---------- */
 const recStatus = () => { $('#rec').textContent = '⏺ ' + rec.pts.length + ' pts · ' + Math.round(len(rec.pts)) + ' m · 📷 ' + rec.photos.length; };
@@ -426,7 +550,7 @@ async function draw() {
   });
   $('#lPts').innerHTML = P.length ? '' : '<div class="vide">Aucun point. Touchez 📍 pour en créer un.</div>';
   P.forEach(p => { const d = document.createElement('div'); d.className = 'item';
-    d.innerHTML = `<div><b></b><small>${p.f && p.f.type ? p.f.type + ' · ' : ''}${p.photos.length} photo(s) · ${p.lat.toFixed(6)}, ${p.lng.toFixed(6)}</small></div><button class="ed">✏️</button><button class="del">🗑</button>`;
+    d.innerHTML = `<div><b></b><small>${p.f && p.f.type ? p.f.type + (p.f.statut ? ' (' + p.f.statut + ')' : '') + ' · ' : ''}${p.photos.length} photo(s) · ${p.lat.toFixed(6)}, ${p.lng.toFixed(6)}</small></div><button class="ed">✏️</button><button class="del">🗑</button>`;
     d.querySelector('b').textContent = p.name;
     d.firstChild.onclick = () => { $('#fList').classList.remove('on'); map.setView([p.lat, p.lng], 19); };
     d.querySelector('.ed').onclick = () => { $('#fList').classList.remove('on'); editPoint(p); };
@@ -444,6 +568,69 @@ async function draw() {
 $('#bList').onclick = () => $('#fList').classList.add('on');
 $('#lClose').onclick = () => $('#fList').classList.remove('on');
 
+/* ---------- Restauration : relire Releve-Terrain ou importer un ZIP / des fichiers ---------- */
+const numeric = (a, b) => a.localeCompare(b, undefined, {numeric: true});
+const fieldsOf = o => { const f = {}; FIELDS.forEach(x => f[x.id] = o[x.id] || ''); f.type = OLD_TYPES[f.type] || f.type; return f; };
+const pointFrom = (o, photos) => ({name: o.name, f: fieldsOf(o), note: o.note || '', lat: o.lat, lng: o.lng, acc: o.precision_m ?? null, alt: null, t: o.date || new Date().toISOString(), photos});
+const trackFrom = (o, coords, photos) => ({name: o.name, note: o.note || '', t: o.date || new Date().toISOString(), mode: o.mode || 'auto', pts: coords.map((c, i) => [c[0], c[1], i]), photos});
+const report = n => alert('Import terminé : ' + n.p + ' point(s) et ' + n.t + ' trajet(s) ajoutés' + (n.skip ? ' · ' + n.skip + ' déjà présent(s), ignoré(s)' : '') + (n.err ? ' · ' + n.err + ' élément(s) illisible(s)' : '') + '.');
+async function ingestPoint(p, n, backup) {
+  if ((await DB.all('points')).some(x => x.name === p.name)) { n.skip++; return; }
+  await DB.put('points', p); n.p++; if (backup) savePointFiles(p);
+}
+async function ingestTrack(t, n, backup) {
+  if ((await DB.all('tracks')).some(x => x.name === t.name && x.t === t.t)) { n.skip++; return; }
+  t.id = await DB.put('tracks', t); n.t++; if (backup) saveTrackFiles(t);
+}
+async function importZip(file, n) {
+  const z = await JSZip.loadAsync(file), keys = Object.keys(z.files), find = re => keys.find(k => re.test(k));
+  const pf = find(/(^|\/)points\.geojson$/), tf = find(/(^|\/)trajets\.geojson$/), ff = find(/(^|\/)photos_trajets\.geojson$/), dir = k => k.replace(/[^/]*$/, '');
+  if (!pf && !tf) { n.err++; return; }
+  if (pf) {
+    const r = dir(pf);
+    for (const ft of JSON.parse(await z.file(pf).async('string')).features) {
+      const o = {...ft.properties, lat: ft.geometry.coordinates[1], lng: ft.geometry.coordinates[0]}, ph = [];
+      for (const path of o.photos || []) { const e = z.file(r + path); if (e) ph.push(await e.async('blob')); }
+      await ingestPoint(pointFrom(o, ph), n, true);
+    }
+  }
+  if (tf) {
+    const r = dir(tf), pg = ff ? JSON.parse(await z.file(ff).async('string')).features : [];
+    for (const ft of JSON.parse(await z.file(tf).async('string')).features) {
+      const ph = [];
+      for (const q of pg.filter(q => q.properties.trajet === ft.properties.name)) {
+        const e = z.file(r + q.properties.photo);
+        if (e) ph.push({blob: await e.async('blob'), lat: q.geometry.coordinates[1], lng: q.geometry.coordinates[0], t: q.properties.date});
+      }
+      await ingestTrack(trackFrom(ft.properties, ft.geometry.coordinates, ph), n, true);
+    }
+  }
+}
+async function importLoose(fs, n) {  // fichiers d'un dossier Points/<nom> ou Trajets/<nom> : .json / .geojson + photos
+  const img = {}; fs.filter(f => /\.jpe?g$/i.test(f.name)).forEach(f => img[f.name] = f);
+  for (const f of fs) {
+    try {
+      if (/\.json$/i.test(f.name)) {
+        const o = JSON.parse(await f.text()), pre = safe(o.name) + '_';
+        await ingestPoint(pointFrom(o, Object.keys(img).filter(k => k.startsWith(pre)).sort(numeric).map(k => img[k])), n, true);
+      } else if (/\.geojson$/i.test(f.name)) {
+        const gj = JSON.parse(await f.text()), ln = gj.features.find(x => x.geometry.type === 'LineString'); if (!ln) continue;
+        const ph = gj.features.filter(x => x.geometry.type === 'Point' && img[x.properties.photo])
+          .map(x => ({blob: img[x.properties.photo], lat: x.geometry.coordinates[1], lng: x.geometry.coordinates[0], t: x.properties.date}));
+        await ingestTrack(trackFrom(ln.properties, ln.geometry.coordinates, ph), n, true);
+      }
+    } catch (e) { n.err++; }
+  }
+}
+async function importFiles(fs) {
+  const n = {p: 0, t: 0, skip: 0, err: 0}, loose = [];
+  for (const f of fs) { if (/\.zip$/i.test(f.name)) { try { await importZip(f, n); } catch (e) { n.err++; } } else loose.push(f); }
+  if (loose.length) await importLoose(loose, n);
+  await draw(); report(n);
+}
+$('#lImport').onclick = () => $('#iImp').click();
+$('#iImp').onchange = async e => { const fs = [...e.target.files]; e.target.value = ''; if (fs.length) { try { await importFiles(fs); } catch (err) { alert('Import impossible : ' + err.message); } } };
+
 /* ---------- Export : un seul ZIP (dossier avec photos, CSV, GeoJSON, KMZ) ---------- */
 const safe = s => s.replace(/[\\/:*?"<>|]/g, '_').trim() || 'point';
 const day = () => new Date().toISOString().slice(0, 10);
@@ -454,7 +641,7 @@ async function exportAll() {
   P.forEach(p => {
     const dir = z.folder(safe(p.name));
     p.photos.forEach((b, i) => dir.file(safe(p.name) + '_' + (i + 1) + '.jpg', b));
-    csv.push([p.name, ...FIELDS.map(f => (p.f || {})[f.id] || ''), p.lat, p.lng, p.acc ?? '', p.alt ?? '', p.t, (p.note || '').replace(/[;\n]/g, ' '), p.photos.length].join(';'));
+    csv.push([p.name, ...FIELDS.map(f => String((p.f || {})[f.id] || '').replace(/[;\n]/g, ' ')), p.lat, p.lng, p.acc ?? '', p.alt ?? '', p.t, (p.note || '').replace(/[;\n]/g, ' '), p.photos.length].join(';'));
   });
   z.file('points.csv', csv.join('\n'));
   z.file('points.geojson', JSON.stringify({type: 'FeatureCollection', features: P.map(p => ({type: 'Feature',
@@ -552,7 +739,7 @@ async function buildKmz(P, T) {
     const d = safe(p.name), fl = p.f || {};
     const pics = p.photos.map((b, i) => img('files/' + d + '/' + d + '_' + (i + 1) + '.jpg', b)).join('');
     pm.push(`<Placemark><name>${esc(p.name)}</name><styleUrl>#pt</styleUrl><description><![CDATA[${pics}${esc(p.note)}]]></description>` +
-      `<ExtendedData>${FIELDS.map(f => `<Data name="${f.id}"><value>${esc(fl[f.id])}</value></Data>`).join('')}<Data name="date"><value>${p.t}</value></Data></ExtendedData>` +
+      `<ExtendedData>${FIELDS.filter(f => fl[f.id]).map(f => `<Data name="${f.id}"><value>${esc(fl[f.id])}</value></Data>`).join('')}<Data name="date"><value>${p.t}</value></Data></ExtendedData>` +
       `<Point><coordinates>${p.lng},${p.lat},0</coordinates></Point></Placemark>`);
   });
   T.forEach(t => {
@@ -577,7 +764,7 @@ $('#bExp').onclick = async () => {
   b.disabled = false; b.querySelector('b').textContent = '⬇';
 };
 
-draw(); recoverDraft(); showSav();
+migrate().then(() => { draw(); recoverDraft(); showSav(); });
 if ('serviceWorker' in navigator && !NATIVE) navigator.serviceWorker.register('sw.js');
 </script>
 </body>
